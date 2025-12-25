@@ -59,7 +59,7 @@ class AudioSourceEndpoint {
     ]
   }
 
-  fun cleanString(s) {
+  fun _cleanString(s) {
     if (s == null) {
       return ""
     }
@@ -67,9 +67,9 @@ class AudioSourceEndpoint {
   }
 
   // Simple Levenshtein distance implementation
-  fun score(s1, s2) {
-    var a = cleanString(s1)
-    var b = cleanString(s2)
+  fun _score(s1, s2) {
+    var a = _cleanString(s1)
+    var b = _cleanString(s2)
     if (a == b) {
       return 1.0
     }
@@ -79,7 +79,7 @@ class AudioSourceEndpoint {
     return 0.0
   }
   
-  fun searchTrack(query) {
+  fun _searchTrack(query) {
     return api.get_req(
       "/search",
       queryParameters: {
@@ -87,10 +87,10 @@ class AudioSourceEndpoint {
         "type": "track",
         "limit": "5"
       }.toJson()
-    ).then((res)=> Converter.toSpotubeMatchObject(res.data["tracks"]))
+    ).then((res) => Converter.toSpotubeMatchObject(res.data["tracks"]))
   }
 
-  fun textSearch(trackName, artistName, albumName) {
+  fun _textSearch(trackName, artistName, albumName) {
     if (albumName != null && albumName.isNotEmpty) {
       return api.get_req(
         "/search",
@@ -110,17 +110,17 @@ class AudioSourceEndpoint {
           ).then((details) {
             var tracks = details.data["album"]["tracks"]
             var bestTrack
-            var bestScore = 0.0
+            var best_score = 0.0
 
             for (var t in tracks) {
-              var score = score(t["title"], trackName)
-              if (score > bestScore) {
-                bestScore = score
+              var score = _score(t["title"], trackName)
+              if (score > best_score) {
+                best_score = score
                 bestTrack = t
               }
             }
 
-            if (bestTrack != null && bestScore > 0.5) {
+            if (bestTrack != null && best_score > 0.5) {
               bestTrack["albumCover"] = album["albumCover"]
               if (bestTrack["artist"] == null) {
                 bestTrack["artist"] = artistName
@@ -128,15 +128,15 @@ class AudioSourceEndpoint {
 
               return Converter.toSpotubeMatchObject([bestTrack])
             } else {
-              return searchTrack("${trackName} ${artistName}")
+              return _searchTrack("${trackName} ${artistName}")
             }
           })
         } else {
-          return searchTrack("${trackName} ${artistName}")
+          return _searchTrack("${trackName} ${artistName}")
         }
       })
     } else {
-      return searchTrack("${trackName} ${artistName}")
+      return _searchTrack("${trackName} ${artistName}")
     }
   }
 
@@ -159,15 +159,15 @@ class AudioSourceEndpoint {
           "limit": "5",
         }.toJson()
       ).then((res) {
-        if(res.data["tracks"] != null && res.data["tracks"].isNotEmpty) {
+        if (res.data["tracks"] != null && res.data["tracks"].isNotEmpty) {
           return Converter.toSpotubeMatchObject(res.data["tracks"])
         } else {
-          return textSearch(trackName, artistName, albumName)
+          return _textSearch(trackName, artistName, albumName)
         }
       })
     }
 
-    return textSearch(trackName, artistName, albumName)
+    return _textSearch(trackName, artistName, albumName)
   }
 
   /// For the given match, return all available streams.

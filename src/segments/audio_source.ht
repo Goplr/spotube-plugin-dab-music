@@ -58,16 +58,28 @@ class AudioSourceEndpoint {
       { type: "lossy", name: "mp3", qualities: [ { bitrate: 320000 } ] }.toJson(),
     ]
   }
-  
-  /// Find matching audio sources for a given track. It can return one or multiple matches.
-  /// The first match is considered the best match.
-  /// @param track - Map<SpotubeTrackObject>
-  /// @returns Future<List<SpotubeAudioSourceMatchObject>>
-  fun matches(track: Map) -> List {
-    final hasISRC = track["isrc"] != null && track["isrc"].isNotEmpty
-    var query = hasISRC ? track["isrc"] 
-      : "${track["name"]} ${track["artists"][0]["name"]}"
 
+  fun cleanString(s) {
+    if (s == null) {
+      return ""
+    }
+    return s.toString().toLowerCase().trim()
+  }
+
+  // Simple Levenshtein distance implementation
+  fun score(s1, s2) {
+    var a = cleanString(s1)
+    var b = cleanString(s2)
+    if (a == b) {
+      return 1.0
+    }
+    if (a.contains(b) || b.contains(a)) {
+      return 0.8
+    }
+    return 0.0
+  }
+  
+  fun searchTrack(query) {
     return api.get_req(
       "/search",
       queryParameters: {
@@ -75,20 +87,87 @@ class AudioSourceEndpoint {
         "type": "track",
         "limit": "5"
       }.toJson()
-    ).then((res) {
-      if(hasISRC && (res.data["tracks"] == null || res.data["tracks"].isEmpty)) {
-        return api.get_req(
-          "/search",
-          queryParameters: {
-            "q": "${track["name"]} ${track["artists"][0]["name"]}",
-            "type": "track",
-            "limit": "5"
-          }.toJson()
-        ).then((res)=> Converter.toSpotubeMatchObject(res.data["tracks"]))
-      }
-      
-      return Converter.toSpotubeMatchObject(res.data["tracks"])
-    })
+    ).then((res)=> Converter.toSpotubeMatchObject(res.data["tracks"]))
+  }
+
+  fun textSearch(trackName, artistName, albumName) {
+    if (albumName != null && albumName.isNotEmpty) {
+      return api.get_req(
+        "/search",
+        queryParameters: {
+          "q": "${albumName} ${artistName}",
+          "type": "album",
+          "limit": "1",
+        }.toJson()
+      ).then((res) {
+        if (res.data["albums"] != null && res.data["albums"].isNotEmpty) {
+          var album = res.data["albums"][0]
+          return api.get_req(
+            "/album",
+            queryParameters: {
+              "albumId": album["id"]
+            }.toJson()
+          ).then((details) {
+            var tracks = details.data["album"]["tracks"]
+            var bestTrack
+            var bestScore = 0.0
+
+            for (var t in tracks) {
+              var score = score(t["title"], trackName)
+              if (score > bestScore) {
+                bestScore = score
+                bestTrack = t
+              }
+            }
+
+            if (bestTrack != null && bestScore > 0.5) {
+              bestTrack["albumCover"] = album["albumCover"]
+              if (bestTrack["artist"] == null) {
+                bestTrack["artist"] = artistName
+              }
+
+              return Converter.toSpotubeMatchObject([bestTrack])
+            } else {
+              return searchTrack("${trackName} ${artistName}")
+            }
+          })
+        } else {
+          return searchTrack("${trackName} ${artistName}")
+        }
+      })
+    } else {
+      return searchTrack("${trackName} ${artistName}")
+    }
+  }
+
+  /// Find matching audio sources for a given track. It can return one or multiple matches.
+  /// The first match is considered the best match.
+  /// @param track - Map<SpotubeTrackObject>
+  /// @returns Future<List<SpotubeAudioSourceMatchObject>>
+  fun matches(track: Map) -> List {
+    final hasISRC = track["isrc"] != null && track["isrc"].isNotEmpty
+    var trackName = track["name"]
+    var artistName = track["artists"][0]["name"]
+    var albumName = track["album"] != null ? track["album"]["name"] : null
+
+    if (hasISRC) {
+      return api.get_req(
+        "/search",
+        queryParameters: {
+          "q": track["isrc"],
+          "type": "track",
+          "limit": "5",
+        }.toJson()
+      ).then((res) {
+        if(res.data["tracks"] != null && res.data["tracks"].isNotEmpty) {
+          return Converter.toSpotubeMatchObject(res.data["tracks"])
+        } else {
+          return textSearch(trackName, artistName, albumName)
+        }
+      })
+    }
+
+    return textSearch(trackName, artistName, albumName)
   }
 
   /// For the given match, return all available streams.

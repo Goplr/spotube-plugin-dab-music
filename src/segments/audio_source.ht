@@ -11,7 +11,7 @@ class Converter {
         "id": d["id"].toString(),
         "title": d["title"],
         "artists": [d["artist"]],
-        "duration": d["duration"] * 1000,
+        "duration": (d["duration"] ?? 0) * 1000,
         "thumbnail": d["albumCover"],
         "externalUri": "https://dab.yeet.su/search?q=${d["title"]}%20${d["artist"]}",
       }.toJson()
